@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>RBAC Demo — Admin / Editor / Viewer</title>
+  <style>
+    :root{
+      --bg:#0f1724; --card:#0b1220; --accent:#60a5fa; --muted:#94a3b8;
+      --danger:#ef4444; --success:#10b981;
+    }
+    *{box-sizing:border-box;font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+    body{margin:0;background:linear-gradient(180deg,#071024 0%, #08142a 100%);color:#e6eef8;padding:28px;}
+    .wrap{max-width:960px;margin:0 auto;}
+    header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+    h1{font-size:20px;margin:0}
+    .role-card{background:var(--card);padding:12px;border-radius:12px;display:flex;gap:12px;align-items:center}
+    select,button{font-size:14px;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit}
+    .muted{color:var(--muted);font-size:13px}
+    main{display:grid;grid-template-columns:320px 1fr;gap:18px;margin-top:18px}
+    .panel{background:var(--card);padding:16px;border-radius:12px}
+    .panel h2{margin:0 0 8px 0;font-size:16px}
+    .actions{display:flex;flex-direction:column;gap:8px}
+    .btn{cursor:pointer;border:none;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.04);color:inherit}
+    .btn.primary{background:linear-gradient(90deg,var(--accent),#7dd3fc);color:#04263b;font-weight:600}
+    .btn.danger{background:linear-gradient(90deg,var(--danger),#fb7185);color:white}
+    .btn.ghost{background:transparent;border:1px dashed rgba(255,255,255,0.06)}
+    .posts-list{display:flex;flex-direction:column;gap:12px}
+    .post{padding:12px;border-radius:10px;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);display:flex;justify-content:space-between;align-items:flex-start;gap:8px;border:1px solid rgba(255,255,255,0.02)}
+    .post .meta{color:var(--muted);font-size:13px}
+    .post .controls{display:flex;gap:8px}
+    .tooltip{font-size:12px;color:var(--muted);margin-top:6px}
+    .hint{font-size:13px;color:var(--muted);margin-top:10px}
+    .small{font-size:12px;color:var(--muted)}
+    .disabled{opacity:0.45;pointer-events:none}
+    .tag{background:rgba(255,255,255,0.04);padding:4px 8px;border-radius:999px;font-size:12px}
+    footer{margin-top:18px;color:var(--muted);font-size:13px}
+    .owner {font-weight:600}
+    .notice {background: rgba(255,255,255,0.02); padding:8px;border-radius:8px;margin-bottom:10px;border-left:3px solid rgba(255,255,255,0.03)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>RBAC UI Demo — Admin / Editor / Viewer</h1>
+        <div class="muted">Client-side demo: shows/hides controls & enforces ownership checks in JS.</div>
+      </div>
+      <div class="role-card">
+        <label class="small muted" for="userSelect">Sign in as:</label>
+        <select id="userSelect" aria-label="Select user"></select>
+        <button id="logout" class="btn ghost" style="margin-left:8px">Sign out</button>
+      </div>
+    </header>
+
+    <main>
+      <!-- Left column: actions -->
+      <section class="panel" aria-labelledby="leftTitle">
+        <h2 id="leftTitle">Actions</h2>
+        <div class="notice" id="roleNotice"></div>
+
+        <div class="actions">
+          <button id="createPostBtn" class="btn primary">Create New Post</button>
+          <button id="manageUsersBtn" class="btn" title="Admin only">Open Admin Panel (Manage Users)</button>
+          <div class="tooltip">Tooltips explain role gating. Buttons hidden/disabled by role.</div>
+        </div>
+
+        <div style="margin-top:12px">
+          <h3 class="small">Available Roles</h3>
+          <div style="display:flex;gap:8px;margin-top:6px">
+            <div class="tag">Admin — full access</div>
+            <div class="tag">Editor — create/read/update own</div>
+            <div class="tag">Viewer — read only</div>
+          </div>
+          <div class="hint">Try switching users to see UI change live.</div>
+        </div>
+      </section>
+
+      <!-- Right column: posts -->
+      <section class="panel" aria-labelledby="postsTitle">
+        <h2 id="postsTitle">Posts</h2>
+        <div class="muted small" style="margin-bottom:8px">Click Edit/Delete — ownership rules enforced below.</div>
+        <div class="posts-list" id="postsList"></div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="muted">Note: Client demo only. Always enforce RBAC on the backend (APIs) too.</div>
+    </footer>
+  </div>
+
+  <script>
+    /**********************************************************************
+     * Seeded data (sample users + posts)
+     *********************************************************************/
+    const seededUsers = [
+      { id: 'u1', name: 'Alice Admin', role: 'Admin', email: 'alice@acme.test' },
+      { id: 'u2', name: 'Eddie Editor', role: 'Editor', email: 'eddie@acme.test' },
+      { id: 'u3', name: 'Vera Viewer', role: 'Viewer', email: 'vera@acme.test' }
+    ];
+
+    let posts = [
+      { id: 'p1', title: 'Admin announcement', body: 'Project kickoff scheduled.', authorId: 'u1', createdAt: '2025-11-01' },
+      { id: 'p2', title: "Editor's tips", body: 'How to write good content.', authorId: 'u2', createdAt: '2025-11-04' },
+      { id: 'p3', title: 'Shared thoughts', body: 'Random ideas.', authorId: 'u1', createdAt: '2025-11-05' }
+    ];
+
+    /**********************************************************************
+     * Role & Permission Matrix (client-side mapping for UI visibility)
+     * Note: This maps what UI/actions are allowed. Backend must enforce too.
+     *********************************************************************/
+    const rolePermissions = {
+      Admin: {
+        canCreate: true,
+        canRead: true,
+        canUpdateAny: true,
+        canDeleteAny: true,
+        canManageUsers: true
+      },
+      Editor: {
+        canCreate: true,
+        canRead: true,
+        canUpdateAny: false,  // only own -> enforced at "ownership" check
+        canDeleteAny: false,
+        canManageUsers: false
+      },
+      Viewer: {
+        canCreate: false,
+        canRead: true,
+        canUpdateAny: false,
+        canDeleteAny: false,
+        canManageUsers: false
+      }
+    };
+
+    /**********************************************************************
+     * App state and DOM refs
+     *********************************************************************/
+    let currentUser = null; // will be set when signing in
+
+    const userSelect = document.getElementById('userSelect');
+    const logoutBtn = document.getElementById('logout');
+    const createPostBtn = document.getElementById('createPostBtn');
+    const manageUsersBtn = document.getElementById('manageUsersBtn');
+    const postsList = document.getElementById('postsList');
+    const roleNotice = document.getElementById('roleNotice');
+
+    /**********************************************************************
+     * Initialize UI: populate user selector
+     *********************************************************************/
+    function init() {
+      // populate select
+      userSelect.innerHTML = '<option value="">-- Not signed in --</option>';
+      seededUsers.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.id;
+        opt.textContent = `${u.name} — ${u.role}`;
+        userSelect.appendChild(opt);
+      });
+
+      userSelect.addEventListener('change', () => {
+        if (!userSelect.value) { signOut(); return; }
+        signIn(userSelect.value);
+      });
+      logoutBtn.addEventListener('click', signOut);
+
+      createPostBtn.addEventListener('click', () => {
+        if (!currentUser) return alert('Sign in first.');
+        if (!rolePermissions[currentUser.role].canCreate) return alert('Your role cannot create posts.');
+        const title = prompt('New post title:');
+        const body = prompt('Post body:');
+        if (!title) return;
+        const newPost = {
+          id: 'p' + (Math.random()*100000|0),
+          title, body, authorId: currentUser.id, createdAt: new Date().toISOString().slice(0,10)
+        };
+        posts.unshift(newPost);
+        renderPosts();
+        alert('Post created (client demo). In a real app this calls API.');
+      });
+
+      manageUsersBtn.addEventListener('click', () => {
+        if (!currentUser) return alert('Sign in first.');
+        if (!rolePermissions[currentUser.role].canManageUsers) return alert('Only Admins can manage users.');
+        alert('Open Admin panel (client demo). In production this would navigate to /admin/users.');
+      });
+
+      renderPosts();
+      signIn('u3'); // default sign-in to Viewer to show gating initially
+      userSelect.value = currentUser?.id || '';
+    }
+
+    /**********************************************************************
+     * Sign-in / Sign-out helpers (simulates JWT claim presence)
+     *********************************************************************/
+    function signIn(userId) {
+      currentUser = seededUsers.find(u => u.id === userId) || null;
+      updateUIForRole();
+    }
+
+    function signOut() {
+      currentUser = null;
+      userSelect.value = '';
+      updateUIForRole();
+    }
+
+    function updateUIForRole() {
+      // show role notice
+      if (!currentUser) {
+        roleNotice.innerHTML = '<strong>Signed out</strong> — select a user to simulate signing in.';
+        createPostBtn.classList.add('disabled');
+        manageUsersBtn.classList.add('disabled');
+      } else {
+        roleNotice.innerHTML = `<strong>Signed in</strong> as <span class="owner">${currentUser.name}</span> — role: <span class="tag">${currentUser.role}</span>`;
+        createPostBtn.classList.toggle('disabled', !rolePermissions[currentUser.role].canCreate);
+        manageUsersBtn.classList.toggle('disabled', !rolePermissions[currentUser.role].canManageUsers);
+      }
+      // re-render posts to update per-post controls
+      renderPosts();
+    }
+
+    /**********************************************************************
+     * Render posts and attach per-post controls with ownership checks
+     *********************************************************************/
+    function renderPosts() {
+      postsList.innerHTML = '';
+      if (posts.length === 0) {
+        postsList.innerHTML = '<div class="muted">No posts yet.</div>';
+        return;
+      }
+
+      posts.forEach(post => {
+        const div = document.createElement('div');
+        div.className = 'post';
+        const author = seededUsers.find(u => u.id === post.authorId);
+
+        // left: content
+        const left = document.createElement('div');
+        left.style.flex = '1';
+        left.innerHTML = `<div style="font-weight:700">${escapeHtml(post.title)}</div>
+                          <div class="meta">${escapeHtml(post.body)}</div>
+                          <div class="meta tooltip">By <span class="owner">${escapeHtml(author ? author.name : 'Unknown')}</span> • ${post.createdAt}</div>`;
+
+        // right: controls
+        const right = document.createElement('div');
+        right.className = 'controls';
+
+        // Read is always allowed if role allows reading
+        const canRead = currentUser ? rolePermissions[currentUser.role].canRead : false;
+        if (!canRead) {
+          const locked = document.createElement('div');
+          locked.className = 'small muted';
+          locked.textContent = 'No read permission';
+          right.appendChild(locked);
+        } else {
+          // Edit button
+          const editBtn = document.createElement('button');
+          editBtn.className = 'btn';
+          editBtn.textContent = 'Edit';
+          // Determine visibility / enabled:
+          let canEdit = false;
+          if (!currentUser) canEdit = false;
+          else if (currentUser.role === 'Admin') canEdit = true;
+          else if (currentUser.role === 'Editor') canEdit = (post.authorId === currentUser.id);
+          // Viewer can't edit
+
+          if (!canEdit) {
+            editBtn.classList.add('disabled');
+            editBtn.title = currentUser ? 'You cannot edit this post' : 'Sign in to edit';
+          } else {
+            editBtn.title = 'Edit this post';
+            editBtn.addEventListener('click', () => onEditPost(post.id));
+          }
+          right.appendChild(editBtn);
+
+          // Delete button
+          const delBtn = document.createElement('button');
+          delBtn.className = 'btn danger';
+          delBtn.textContent = 'Delete';
+          let canDelete = false;
+          if (!currentUser) canDelete = false;
+          else if (currentUser.role === 'Admin') canDelete = true;
+          else if (currentUser.role === 'Editor') canDelete = (post.authorId === currentUser.id);
+          if (!canDelete) {
+            delBtn.classList.add('disabled');
+            delBtn.title = currentUser ? 'You cannot delete this post' : 'Sign in to delete';
+          } else {
+            delBtn.title = 'Delete this post';
+            delBtn.addEventListener('click', () => onDeletePost(post.id));
+          }
+          right.appendChild(delBtn);
+
+          // View button (always present if read allowed)
+          const viewBtn = document.createElement('button');
+          viewBtn.className = 'btn';
+          viewBtn.textContent = 'View';
+          viewBtn.addEventListener('click', () => alert(`Post: ${post.title}\n\n${post.body}\n\nBy: ${author ? author.name : 'Unknown'}`));
+          right.appendChild(viewBtn);
+        }
+
+        div.appendChild(left);
+        div.appendChild(right);
+        postsList.appendChild(div);
+      });
+    }
+
+    /**********************************************************************
+     * Handlers for edit/delete with ownership checks
+     *********************************************************************/
+    function onEditPost(postId) {
+      const post = posts.find(p => p.id === postId);
+      if (!post) return alert('Post not found.');
+
+      // Ownership / permission enforcement (client-side check)
+      if (!currentUser) return alert('Sign in first.');
+      if (currentUser.role === 'Admin') {
+        // allowed
+      } else if (currentUser.role === 'Editor') {
+        if (post.authorId !== currentUser.id) return alert('Editors can only edit their own posts.');
+      } else {
+        return alert('Your role cannot edit posts.');
+      }
+
+      const newTitle = prompt('Edit title:', post.title);
+      const newBody = prompt('Edit body:', post.body);
+      if (newTitle != null) post.title = newTitle;
+      if (newBody != null) post.body = newBody;
+      renderPosts();
+      alert('Post updated (client demo). In production this would call the API and backend would validate permissions.');
+    }
+
+    function onDeletePost(postId) {
+      const post = posts.find(p => p.id === postId);
+      if (!post) return alert('Post not found.');
+
+      if (!currentUser) return alert('Sign in first.');
+      if (currentUser.role === 'Admin') {
+        // allowed
+      } else if (currentUser.role === 'Editor') {
+        if (post.authorId !== currentUser.id) return alert('Editors can only delete their own posts.');
+      } else {
+        return alert('Your role cannot delete posts.');
+      }
+
+      if (!confirm('Delete this post?')) return;
+      posts = posts.filter(p => p.id !== postId);
+      renderPosts();
+      alert('Post deleted (client demo). Backend must enforce delete permission too.');
+    }
+
+    /**********************************************************************
+     * Utility
+     *********************************************************************/
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+    // Initialize
+    init();
+  </script>
+</body>
+</html>
